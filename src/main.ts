@@ -2,6 +2,7 @@ import './style.css';
 import { addDays, addMonths, diffDays, fmtLong, fmtMonth, fmtShort, format, parse, weekday, type ISODate } from './dates';
 import { holidayName } from './holidays';
 import { buildPlan, defaultSettings, LABELS, type Block, type LeaveType, type Plan, type Settings, type WeekPattern } from './plan';
+import { decodeSettings, encodeSettings, sanitize } from './share';
 
 const STORAGE_KEY = 'verlofplanner:v1';
 const DAYS = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
@@ -21,23 +22,41 @@ const RULE: Record<LeaveType, string> = {
 
 // ---------- state ----------
 
+/** Een gedeelde link gaat voor; anders de laatst opgeslagen planning in deze browser. */
 function load(): Settings {
-  const fallback = defaultSettings(format(new Date()));
+  const shared = decodeSettings(location.hash);
+  if (shared) return shared;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...fallback, ...JSON.parse(raw) };
+    const stored = raw && sanitize(JSON.parse(raw));
+    if (stored) return stored;
   } catch {
     /* geen opslag beschikbaar */
   }
-  return fallback;
+  return defaultSettings(format(new Date()));
 }
 
 function save() {
+  // De URL houdt altijd de actuele planning bij, zodat je hem direct kunt delen.
+  history.replaceState(null, '', `#${encodeSettings(settings)}`);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch {
     /* negeren */
   }
+}
+
+async function share(button: HTMLButtonElement) {
+  save();
+  const url = location.href;
+  const label = button.textContent;
+  try {
+    await navigator.clipboard.writeText(url);
+    button.textContent = 'Link gekopieerd ✓';
+  } catch {
+    window.prompt('Kopieer deze link:', url);
+  }
+  setTimeout(() => (button.textContent = label), 2000);
 }
 
 let settings = load();
@@ -415,7 +434,10 @@ function update() {
 document.querySelector('#app')!.innerHTML = `
   <header class="top">
     <div class="brand"><span class="logo">◐</span> Verlofplanner <em>voor de partner</em></div>
-    <button type="button" class="ghost" onclick="window.print()">Afdrukken</button>
+    <div class="actions">
+      <button type="button" class="ghost" onclick="window.print()">Afdrukken</button>
+      <button type="button" class="primary" id="share">Deel link</button>
+    </div>
   </header>
   <main class="layout">
     <aside id="form"></aside>
@@ -428,5 +450,14 @@ document.querySelector('#app')!.innerHTML = `
 const formEl = document.querySelector<HTMLElement>('#form')!;
 formEl.addEventListener('input', onInput);
 formEl.addEventListener('click', onClick);
+document.querySelector<HTMLButtonElement>('#share')!.addEventListener('click', (e) => share(e.currentTarget as HTMLButtonElement));
+// Plak je een andere gedeelde link in hetzelfde tabblad, laad die planning dan.
+window.addEventListener('hashchange', () => {
+  const shared = decodeSettings(location.hash);
+  if (!shared) return;
+  settings = shared;
+  renderForm();
+  update();
+});
 renderForm();
 update();
