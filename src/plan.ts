@@ -23,6 +23,13 @@ export interface Settings {
   /** Uren per weekdag die je minder werkt tijdens ouderschapsverlof. */
   parentalPattern: WeekPattern;
   parentalStart: ISODate | '';
+  /** Vakantieperiodes (losse dag: start = end). Op deze dagen wordt geen verlof verbruikt. */
+  vacations: Vacation[];
+}
+
+export interface Vacation {
+  start: ISODate;
+  end: ISODate;
 }
 
 export interface LeaveDay {
@@ -54,6 +61,9 @@ export interface Plan {
   blocks: Record<LeaveType, Block>;
   /** Per datum: verlofuren per soort. */
   byDate: Map<ISODate, Partial<Record<LeaveType, number>>>;
+  /** Vakantiedagen met de werkuren die ze kosten (0 op vrije dagen en feestdagen). */
+  vacationDays: Map<ISODate, number>;
+  vacationHours: number;
   allDone: ISODate | null;
 }
 
@@ -77,11 +87,21 @@ export const defaultSettings = (birthDate: ISODate): Settings => ({
   parentalWeeks: 9,
   parentalPattern: [2, 2, 2, 2, 0, 0, 0],
   parentalStart: '',
+  vacations: [],
 });
 
 export function buildPlan(s: Settings): Plan {
   const weekHours = sum(s.work);
   const byDate: Plan['byDate'] = new Map();
+
+  const vacationDays: Plan['vacationDays'] = new Map();
+  for (const v of s.vacations ?? []) {
+    const [from, to] = [v.start, v.end || v.start].sort();
+    for (let date = from, i = 0; date <= to && i < MAX_DAYS; date = addDays(date, 1), i++) {
+      const isFree = s.skipHolidays && holidayName(date);
+      vacationDays.set(date, isFree ? 0 : s.work[weekday(date)]);
+    }
+  }
 
   const usedOn = (date: ISODate) => sum(Object.values(byDate.get(date) ?? {}));
 
@@ -93,6 +113,7 @@ export function buildPlan(s: Settings): Plan {
     for (let i = 0, date = start; remaining > 0.0001 && i < MAX_DAYS; i++, date = addDays(date, 1)) {
       const wd = weekday(date);
       if (s.skipHolidays && holidayName(date)) continue;
+      if (vacationDays.has(date)) continue;
       const room = Math.max(0, s.work[wd] - usedOn(date));
       const hours = Math.min(pattern[wd], room, remaining);
       if (hours <= 0) continue;
@@ -150,6 +171,8 @@ export function buildPlan(s: Settings): Plan {
     weekHours,
     blocks: { birth: b1, extra: b2, parental: b3 },
     byDate,
+    vacationDays,
+    vacationHours: sum([...vacationDays.values()]),
     allDone: ends.at(-1) ?? null,
   };
 }

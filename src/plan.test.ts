@@ -36,6 +36,21 @@ describe('buildPlan', () => {
     expect(plan.byDate.has('2026-04-06')).toBe(false);
   });
 
+  it('verbruikt geen verlof op vakantiedagen en schuift het verlof door', () => {
+    const s = defaultSettings('2026-01-07');
+    // losse dag tijdens geboorteverlof + een week tijdens ouderschapsverlof
+    s.vacations = [
+      { start: '2026-01-08', end: '2026-01-08' },
+      { start: '2026-05-04', end: '2026-05-10' },
+    ];
+    const p = buildPlan(s);
+    expect(p.byDate.has('2026-01-08')).toBe(false);
+    expect(p.blocks.birth.end).toBe('2026-01-14');
+    expect(p.blocks.parental.usedHours).toBe(288);
+    expect(p.vacationHours).toBe(8 + 32);
+    expect(p.allDone! > plan.allDone!).toBe(true);
+  });
+
   it('waarschuwt als ouderschapsverlof niet in het eerste jaar past', () => {
     const s = defaultSettings('2026-01-07');
     s.parentalPattern = [1, 0, 0, 0, 0, 0, 0];

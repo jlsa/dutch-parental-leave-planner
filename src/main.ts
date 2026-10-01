@@ -126,6 +126,17 @@ function renderForm() {
       </div>
     </section>
 
+    <section class="panel" style="--c: var(--vacation)">
+      <h2><i></i>Vakantie</h2>
+      <p class="note">Op vakantiedagen wordt geen verlof verbruikt; het verlof schuift door.</p>
+      <div class="vac-add">
+        <label class="field"><span>Van</span><input type="date" id="vacFrom"></label>
+        <label class="field"><span>Tot en met <em>optioneel</em></span><input type="date" id="vacTo"></label>
+        <button type="button" class="add" id="vacAdd">Toevoegen</button>
+      </div>
+      <ul class="vac-list" id="vacList"></ul>
+    </section>
+
     <button type="button" class="link reset" id="reset">Alles terugzetten naar standaard</button>
   `;
 }
@@ -146,6 +157,10 @@ function onInput(e: Event) {
   } else if (t.id === 'birthDate') {
     if (!t.value) return;
     settings.birthDate = t.value;
+  } else if (t.id === 'vacFrom') {
+    const to = document.querySelector<HTMLInputElement>('#vacTo')!;
+    to.min = t.value;
+    return;
   } else if (t.id === 'birthStart' || t.id === 'extraStart' || t.id === 'parentalStart') {
     settings[t.id] = t.value;
   } else return;
@@ -161,6 +176,18 @@ function onClick(e: Event) {
     const n = Number(t.dataset.quick);
     settings.parentalPattern = settings.work.map((w) => Math.min(w, w > 0 ? n : 0)) as WeekPattern;
     syncPattern('parentalPattern');
+  } else if (t.id === 'vacAdd') {
+    const from = document.querySelector<HTMLInputElement>('#vacFrom')!;
+    const to = document.querySelector<HTMLInputElement>('#vacTo')!;
+    if (!from.value) {
+      from.focus();
+      return;
+    }
+    const [start, end] = [from.value, to.value || from.value].sort();
+    settings.vacations = [...settings.vacations, { start, end }].sort((a, b) => a.start.localeCompare(b.start));
+    from.value = to.value = '';
+  } else if (t.dataset.removeVac) {
+    settings.vacations = settings.vacations.filter((_, i) => i !== Number(t.dataset.removeVac));
   } else if (t.id === 'reset') {
     settings = defaultSettings(settings.birthDate);
     renderForm();
@@ -182,6 +209,7 @@ function renderSummary(plan: Plan) {
   const problems = TYPES.flatMap((t) => plan.blocks[t].checks.filter((c) => !c.ok));
   const p = plan.blocks.parental;
   const reducedWeek = plan.weekHours - p.hoursPerWeek;
+  const vacWorkdays = [...plan.vacationDays.values()].filter((v) => v > 0).length;
 
   return `
     <div class="hero">
@@ -200,6 +228,7 @@ function renderSummary(plan: Plan) {
       <div><b>${h(TYPES.reduce((a, t) => a + plan.blocks[t].totalHours, 0))}</b><span>verlof in totaal</span></div>
       <div><b>${p.totalHours ? h(reducedWeek) : '—'}</b><span>werken per week tijdens ouderschapsverlof</span></div>
       <div><b>${p.days.length ? weeks(diffDays(p.start!, p.end!) + 1) : '—'}</b><span>duur ouderschapsverlof</span></div>
+      <div><b>${plan.vacationHours ? h(plan.vacationHours) : '—'}</b><span>vakantie${vacWorkdays ? ` (${vacWorkdays} werkdag${vacWorkdays === 1 ? '' : 'en'})` : ''}</span></div>
     </div>
 
     <div class="cards">${TYPES.map((t) => card(plan.blocks[t])).join('')}</div>
@@ -259,6 +288,22 @@ function renderTimeline(plan: Plan) {
     </div>`;
   });
 
+  const vacs = settings.vacations.filter((v) => v.end >= birth && diffDays(birth, v.start) <= span);
+  if (vacs.length) {
+    rows.push(`<div class="row" style="--c: var(--vacation)">
+      <div class="lane">
+        ${vacs
+          .map((v) => {
+            const left = Math.max(0, pos(v.start));
+            const width = Math.max(0.6, Math.min(100, pos(addDays(v.end, 1))) - left);
+            return `<div class="seg" style="left:${left}%;width:${width}%" title="Vakantie: ${fmtShort(v.start)} – ${fmtShort(v.end)}"></div>`;
+          })
+          .join('')}
+      </div>
+      <span class="rowlabel">Vakantie</span>
+    </div>`);
+  }
+
   return `
     <section class="block">
       <h2>Tijdlijn eerste levensjaar</h2>
@@ -293,11 +338,13 @@ function renderCalendar(plan: Plan) {
       const hours = types.reduce((a, t) => a + entry[t]!, 0);
       monthHours += hours;
       const holiday = holidayName(date);
+      const vacation = plan.vacationDays.get(date);
       const dl = deadlines.get(date);
       const cls = [
         'day',
         work === 0 ? 'off' : '',
         types[0] ? `t-${types[0]}` : '',
+        vacation ? 't-vacation' : vacation === 0 ? 'vac-off' : '',
         holiday ? 'holiday' : '',
         date === birth ? 'birth' : '',
         date === todayIso ? 'today' : '',
@@ -308,11 +355,12 @@ function renderCalendar(plan: Plan) {
         fmtLong(date),
         date === birth ? 'Geboortedag 🎉' : '',
         holiday ?? '',
+        vacation ? `Vakantie: ${h(vacation)}` : '',
         ...types.map((t) => `${LABELS[t]}: ${h(entry[t]!)}`),
         types.length && work ? `Werken: ${h(Math.max(0, work - hours))}` : '',
         dl ? `Deadline ${LABELS[dl].toLowerCase()}` : '',
       ].filter(Boolean).join('\n');
-      const fill = work ? Math.min(1, hours / work) : 0;
+      const fill = vacation ? 1 : work ? Math.min(1, hours / work) : 0;
       cells.push(`<div class="${cls}" style="--fill:${fill}" title="${esc(tip)}"><span>${d + 1}</span></div>`);
     }
 
@@ -330,6 +378,7 @@ function renderCalendar(plan: Plan) {
         <h2>Jaarkalender</h2>
         <div class="legend">
           ${TYPES.map((t) => `<span style="--c: var(--${t})"><i></i>${LABELS[t]}</span>`).join('')}
+          <span style="--c: var(--vacation)"><i></i>Vakantie</span>
           <span class="lg-partial"><i></i>Deel van de dag</span>
           <span class="lg-dl"><i></i>Deadline</span>
         </div>
@@ -344,6 +393,22 @@ function update() {
   document.querySelector('#workTotal')!.textContent = `${h(plan.weekHours)} per week`;
   document.querySelector('#extraTotal')!.textContent = `${h(Math.min(plan.weekHours, settings.extraPattern.reduce((a, b) => a + b, 0)))} per week`;
   document.querySelector('#parentalTotal')!.textContent = `${h(plan.blocks.parental.hoursPerWeek)} per week`;
+  document.querySelector('#vacList')!.innerHTML = settings.vacations
+    .map((v, i) => {
+      let hours = 0;
+      let workdays = 0;
+      for (let d = v.start; d <= v.end; d = addDays(d, 1)) {
+        const vh = plan.vacationDays.get(d) ?? 0;
+        hours += vh;
+        if (vh > 0) workdays++;
+      }
+      const range = v.start === v.end ? fmtLong(v.start) : `${fmtShort(v.start)} – ${fmtShort(v.end)}`;
+      return `<li>
+        <div><b>${range}</b><span>${workdays} werkdag${workdays === 1 ? '' : 'en'} · ${h(hours)}</span></div>
+        <button type="button" data-remove-vac="${i}" aria-label="Verwijderen" title="Verwijderen">×</button>
+      </li>`;
+    })
+    .join('');
   document.querySelector('#result')!.innerHTML = renderSummary(plan) + renderTimeline(plan) + renderCalendar(plan);
 }
 
