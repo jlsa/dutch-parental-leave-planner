@@ -24,6 +24,7 @@ All amounts are based on your own contract hours, so a 32-hour week gives 32 hou
 - Warnings when leave does not fit within its legal deadline.
 - Timeline of the first year and a full year calendar showing (partial) leave days.
 - Settings are stored in your browser (`localStorage`); nothing is sent anywhere.
+- Share your plan with a link (e.g. with your manager or HR): the whole plan is stored in the part of the URL after `#`, which browsers never send to a server.
 - Print-friendly layout.
 
 ## Getting started
