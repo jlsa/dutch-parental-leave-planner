@@ -1,7 +1,7 @@
 import './style.css';
 import { addDays, addMonths, diffDays, fmtLong, fmtMonth, fmtShort, format, parse, weekday, type ISODate } from './dates';
 import { holidayName } from './holidays';
-import { buildPlan, defaultSettings, LABELS, type Block, type LeaveType, type Plan, type Settings, type WeekPattern } from './plan';
+import { blockRuns, buildPlan, defaultSettings, LABELS, type Block, type RunKind, type LeaveType, type Plan, type Settings, type WeekPattern } from './plan';
 import { decodeSettings, encodeSettings, sanitize } from './share';
 
 const STORAGE_KEY = 'verlofplanner:v1';
@@ -293,15 +293,32 @@ function renderTimeline(plan: Plan) {
     months.push(`<span style="left:${pos(d)}%">${m === 0 ? 'geboorte' : m === 12 ? '1 jaar' : `${m} mnd`}</span>`);
   }
 
+  const GAP_LABEL: Record<Exclude<RunKind, 'leave'>, string> = {
+    vacation: 'Vakantie, geen verlof',
+    holiday: 'Feestdag, geen verlof',
+    none: 'Geen verlof',
+  };
+
   const rows = TYPES.filter((t) => plan.blocks[t].start).map((t) => {
     const b = plan.blocks[t];
     const left = pos(b.start!);
     const width = Math.max(0.6, pos(addDays(b.end!, 1)) - left);
     const late = b.end! > b.deadline;
+    const runs = blockRuns(plan, t, settings);
+    const total = runs.reduce((a, r) => a + r.days, 0);
+    let offset = 0;
+    const parts = runs.map((r) => {
+      const style = `left:${(offset / total) * 100}%;width:${(r.days / total) * 100}%`;
+      offset += r.days;
+      const range = r.days === 1 ? fmtShort(r.start) : `${fmtShort(r.start)} – ${fmtShort(r.end)}`;
+      return r.kind === 'leave'
+        ? `<div class="part" style="${style}" title="${LABELS[t]}: ${range}"></div>`
+        : `<div class="part gap gap-${r.kind}" style="${style}" title="${GAP_LABEL[r.kind]}: ${range}"></div>`;
+    });
     return `<div class="row" style="--c: var(--${t})">
       <div class="lane">
         <div class="deadline" style="left:${pos(addDays(b.deadline, 1))}%" title="Deadline ${fmtShort(b.deadline)}"></div>
-        <div class="seg ${late ? 'late' : ''}" style="left:${left}%;width:${width}%" title="${LABELS[t]}: ${fmtShort(b.start!)} – ${fmtShort(b.end!)}"></div>
+        <div class="seg ${late ? 'late' : ''}" style="left:${left}%;width:${width}%">${parts.join('')}</div>
       </div>
       <span class="rowlabel">${LABELS[t]}</span>
     </div>`;
@@ -325,12 +342,18 @@ function renderTimeline(plan: Plan) {
 
   return `
     <section class="block">
-      <h2>Tijdlijn eerste levensjaar</h2>
+      <div class="block-head">
+        <h2>Tijdlijn eerste levensjaar</h2>
+        <div class="toggles">
+          <label class="check"><input type="checkbox" id="gapHolidays" ${settings.gapHolidays ? 'checked' : ''}><span>Feestdagen als onderbreking</span></label>
+          <label class="check"><input type="checkbox" id="gapOffDays" ${settings.gapOffDays ? 'checked' : ''}><span>Dagen zonder verlof als onderbreking (weekenden, vrije dagen)</span></label>
+        </div>
+      </div>
       <div class="timeline">
         <div class="axis">${months.join('')}</div>
         ${rows.join('') || '<p class="muted">Nog geen verlof ingepland.</p>'}
       </div>
-      <p class="hint">Het streepje per rij is de deadline voor dat verlof.</p>
+      <p class="hint">Het streepje per rij is de deadline voor dat verlof. Gearceerd = vakantie of feestdag, hier wordt geen verlof opgenomen.</p>
     </section>`;
 }
 
@@ -457,6 +480,13 @@ window.addEventListener('hashchange', () => {
   if (!shared) return;
   settings = shared;
   renderForm();
+  update();
+});
+// De schakelaars van de tijdlijn staan in het resultaat, dat bij elke wijziging opnieuw wordt opgebouwd.
+document.querySelector('#result')!.addEventListener('change', (e) => {
+  const t = e.target as HTMLInputElement;
+  if (t.id !== 'gapHolidays' && t.id !== 'gapOffDays') return;
+  settings[t.id] = t.checked;
   update();
 });
 renderForm();

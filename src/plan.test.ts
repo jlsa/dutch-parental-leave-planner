@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlan, defaultSettings } from './plan';
+import { blockRuns, buildPlan, defaultSettings } from './plan';
 import { holidayName } from './holidays';
 
 describe('buildPlan', () => {
@@ -56,5 +56,40 @@ describe('buildPlan', () => {
     s.parentalPattern = [1, 0, 0, 0, 0, 0, 0];
     const p = buildPlan(s);
     expect(p.blocks.parental.checks.some((c) => !c.ok)).toBe(true);
+  });
+});
+
+describe('blockRuns (tijdlijn)', () => {
+  const base = () => {
+    const s = defaultSettings('2026-01-07');
+    s.vacations = [{ start: '2026-05-04', end: '2026-05-08' }];
+    return s;
+  };
+
+  it('onderbreekt het verlof alleen bij vakantie als de schakelaars uit staan', () => {
+    const s = base();
+    const runs = blockRuns(buildPlan(s), 'parental', s);
+    expect(runs.map((r) => r.kind)).toEqual(['leave', 'vacation', 'leave']);
+    expect(runs[1]).toMatchObject({ start: '2026-05-04', end: '2026-05-08', days: 5 });
+  });
+
+  it('toont feestdagen op werkdagen als onderbreking als dat aanstaat', () => {
+    const s = base();
+    s.gapHolidays = true;
+    const runs = blockRuns(buildPlan(s), 'parental', s);
+    // Tweede Paasdag (ma 6 apr 2026) valt in het ouderschapsverlof
+    expect(runs.find((r) => r.kind === 'holiday')).toMatchObject({ start: '2026-04-06', end: '2026-04-06' });
+  });
+
+  it('toont weekenden en vrije dagen als onderbreking als dat aanstaat', () => {
+    const s = base();
+    s.gapOffDays = true;
+    const runs = blockRuns(buildPlan(s), 'birth', s);
+    // wo 7 + do 8 jan verlof, vr–zo vrij, ma 12 + di 13 verlof
+    expect(runs.map((r) => [r.kind, r.days])).toEqual([
+      ['leave', 2],
+      ['none', 3],
+      ['leave', 2],
+    ]);
   });
 });
