@@ -176,8 +176,14 @@ input[type='range'] { width: 100%; accent-color: var(--c, var(--accent)); }
 .axis span:last-child:not(:first-child) { transform: translateX(-100%); }
 .row { display: grid; gap: 4px; }
 .lane { position: relative; height: 22px; background: var(--surface-2); border-radius: 6px; }
-.seg { position: absolute; top: 0; bottom: 0; background: var(--c); border-radius: 6px; }
-.seg.late { background: repeating-linear-gradient(45deg, var(--c) 0 6px, var(--bad) 6px 12px); }
+.seg { position: absolute; top: 0; bottom: 0; border-radius: 6px; overflow: hidden; }
+.part { position: absolute; top: 0; bottom: 0; background: var(--c); }
+.seg.late .part:not(.gap) { background: repeating-linear-gradient(45deg, var(--c) 0 6px, var(--bad) 6px 12px); }
+.part.gap { background: transparent; }
+.part.gap-vacation { background: repeating-linear-gradient(45deg, var(--vacation) 0 2px, transparent 2px 6px); }
+.part.gap-holiday { background: repeating-linear-gradient(45deg, var(--ink-2) 0 1.5px, transparent 1.5px 6px); }
+.seg:empty { background: var(--c); }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; }
 .deadline { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--c); opacity: 0.8; }
 .rowlabel { font-size: 12px; color: var(--ink-2); }
 

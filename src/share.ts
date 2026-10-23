@@ -65,5 +65,7 @@ export function sanitize(input: unknown): Settings | null {
     parentalPattern: pattern(o.parentalPattern, base.parentalPattern),
     parentalStart: date(o.parentalStart, ''),
     vacations,
+    gapHolidays: typeof o.gapHolidays === 'boolean' ? o.gapHolidays : base.gapHolidays,
+    gapOffDays: typeof o.gapOffDays === 'boolean' ? o.gapOffDays : base.gapOffDays,
   };
 }

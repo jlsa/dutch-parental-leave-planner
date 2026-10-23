@@ -25,6 +25,10 @@ export interface Settings {
   parentalStart: ISODate | '';
   /** Vakantieperiodes (losse dag: start = end). Op deze dagen wordt geen verlof verbruikt. */
   vacations: Vacation[];
+  /** Tijdlijn: feestdagen als onderbreking tonen. */
+  gapHolidays: boolean;
+  /** Tijdlijn: dagen zonder verlof (weekenden, vrije dagen) als onderbreking tonen. */
+  gapOffDays: boolean;
 }
 
 export interface Vacation {
@@ -88,6 +92,8 @@ export const defaultSettings = (birthDate: ISODate): Settings => ({
   parentalPattern: [2, 2, 2, 2, 0, 0, 0],
   parentalStart: '',
   vacations: [],
+  gapHolidays: false,
+  gapOffDays: false,
 });
 
 export function buildPlan(s: Settings): Plan {
@@ -175,4 +181,44 @@ export function buildPlan(s: Settings): Plan {
     vacationHours: sum([...vacationDays.values()]),
     allDone: ends.at(-1) ?? null,
   };
+}
+
+/**
+ * Soort dag binnen de periode van een verlofsoort:
+ * - leave: er wordt verlof opgenomen (of de dag telt mee als doorlopend verlof)
+ * - vacation: vakantie, geen verlof
+ * - holiday: feestdag op een werkdag
+ * - none: geen verlof van deze soort (weekend, vrije dag of werkdag zonder verlofuren)
+ */
+export type RunKind = 'leave' | 'vacation' | 'holiday' | 'none';
+
+export interface Run {
+  kind: RunKind;
+  start: ISODate;
+  end: ISODate;
+  days: number;
+}
+
+/**
+ * Deelt de periode van een verlofsoort op in aaneengesloten stukken, zodat de tijdlijn
+ * onderbrekingen kan tonen. Vakantie onderbreekt altijd; feestdagen en dagen zonder verlof
+ * alleen als dat in de instellingen aanstaat, anders lopen ze door als verlof.
+ */
+export function blockRuns(plan: Plan, type: LeaveType, s: Settings): Run[] {
+  const b = plan.blocks[type];
+  if (!b.start || !b.end) return [];
+  const runs: Run[] = [];
+  for (let date = b.start; date <= b.end; date = addDays(date, 1)) {
+    let kind: RunKind = 'leave';
+    if (plan.byDate.get(date)?.[type]) kind = 'leave';
+    else if (plan.vacationDays.has(date)) kind = 'vacation';
+    else if (s.gapHolidays && s.skipHolidays && holidayName(date) && s.work[weekday(date)] > 0) kind = 'holiday';
+    else if (s.gapOffDays) kind = 'none';
+    const last = runs.at(-1);
+    if (last && last.kind === kind) {
+      last.end = date;
+      last.days++;
+    } else runs.push({ kind, start: date, end: date, days: 1 });
+  }
+  return runs;
 }
